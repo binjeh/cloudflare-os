@@ -397,7 +397,7 @@ function gatewayNativeModel(config: AiModelConfig, gatewayUrl: string): Model<Ap
         provider: "ollama",
         baseUrl: `${gatewayUrl}/custom-ollama/v1`,
         reasoning: false,
-        input: ["text"],
+        input: catalog?.input ?? ["text"],
         cost: ZERO_COST,
         ...window,
         compat: workersAiCompat(catalog),
