@@ -274,6 +274,13 @@ describe("getModel AI Gateway routing", () => {
     expect(request.headers.get("cf-access-client-secret")).toBe("ollama-access-secret");
   }, 15000);
 
+  it("honors an image-input capability for an Ollama model", () => {
+    const handle = getModel(env({ CF_AI_GATEWAY_PROVIDERS: "anthropic,ollama" }),
+        { provider: "ollama", model: "qwen2.5vl:7b", apiToken: "", capabilities: { imageInput: true } },
+        INITIATOR);
+    expect(handle.model.input).toEqual(["text", "image"]);
+  });
+
   describe("the Auto Router model", () => {
     const AUTO: AiModelConfig =
         { provider: "cloudflare-auto-router", model: "cloudflare/auto", apiToken: "" };
