@@ -362,11 +362,11 @@ describe("GatewayModels", () => {
         () => {
       const models = gatewayModels({}, "anthropic,cloudflare-auto-router,ollama");
       expect(ids(models.all)).toContain("cloudflare/auto");
-      // Its provider takes no added model, and ollama has no gateway route.
-      expect(models.addableProviders).toEqual(["anthropic"]);
+      // Its provider takes no added model; ollama is served but the router cannot route to it.
+      expect(models.addableProviders).toEqual(["anthropic", "ollama"]);
       expect(models.resolve("cloudflare/auto")?.config).toStrictEqual({
         provider: "cloudflare-auto-router", model: "cloudflare/auto", apiToken: "",
-        autoRouterPool: { providers: ["anthropic"] },
+        autoRouterPool: { providers: ["anthropic", "ollama"] },
       });
       expect(models.resolve("claude-opus-5-5")?.config).toStrictEqual(OPUS);
 
@@ -561,11 +561,9 @@ describe("GatewayModels", () => {
   });
 
   it("names the providers a model may be added under, in catalog order", () => {
-    // The gateway enables ollama here, but does not serve it.
     const models = gatewayModels({}, "openai,ollama,anthropic,mistral");
-    expect(models.addableProviders).toEqual(
-        Object.keys(SUGGESTED_MODELS).filter(p => p === "openai" || p === "anthropic"));
-    expect(models.addableProviders).toHaveLength(2);
+    expect(models.addableProviders).toEqual(["anthropic", "openai", "ollama"]);
+    expect(models.addableProviders).toHaveLength(3);
   });
 
   describe("assertAddable", () => {
@@ -580,6 +578,7 @@ describe("GatewayModels", () => {
     it("accepts a free ID on a provider the gateway serves and enables", () => {
       expect(() => models.assertAddable(NEW)).not.toThrow();
       expect(() => models.assertAddable({ ...NEW, provider: "cloudflare" })).not.toThrow();
+      expect(() => models.assertAddable({ ...NEW, provider: "ollama" })).not.toThrow();
       // Not the name of a model: only an ID has to be free.
       expect(() => models.assertAddable({ ...NEW, name: "Claude Opus 5.5" })).not.toThrow();
     });
@@ -589,8 +588,6 @@ describe("GatewayModels", () => {
         'Provider "mistral" is not served through AI Gateway.'],
       ["an inherited provider name", { ...NEW, provider: "__proto__" },
         'Provider "__proto__" is not served through AI Gateway.'],
-      ["a provider the gateway enables but can't serve", { ...NEW, provider: "ollama" },
-        'Provider "ollama" is not served through AI Gateway.'],
       ["a provider the gateway does not enable", { ...NEW, provider: "openai" },
         'Provider "openai" is not enabled on this deployment.'],
       ["an ID the catalog already has", { ...NEW, provider: "cloudflare", id: "claude-opus-5-5" },
@@ -617,12 +614,13 @@ describe("GatewayModels", () => {
         "CF_AI_GATEWAY_API_TOKEN is configured for the HTTPS one.";
     it("enables the environment's, and the ones an admin added that the gateway serves", () => {
       expect([...gatewayModels({}, "anthropic").providers]).toEqual(["anthropic"]);
-      // Neither ollama, which has no gateway route, nor a name that is no provider's.
+      // Neither a name that is no provider's nor the Auto Router (one model, not addable).
       const models = gatewayModels({
         addedProviders: ["openai", "ollama", "mistral", "constructor"] as AiModelProvider[],
       }, "anthropic");
-      expect([...models.providers]).toEqual(["anthropic", "openai"]);
-      expect(models.providerSettings.map(({ provider }) => provider)).toEqual(CATALOG_ORDER);
+      expect([...models.providers]).toEqual(["anthropic", "openai", "ollama"]);
+      expect(models.providerSettings.map(({ provider }) => provider))
+          .toEqual([...CATALOG_ORDER, "ollama"]);
       // The environment's own are taken as they are, whether or not the gateway serves them.
       expect([...gatewayModels({ addedProviders: ["anthropic"] }, "anthropic,ollama").providers])
           .toEqual(["anthropic", "ollama"]);
@@ -661,11 +659,12 @@ describe("GatewayModels", () => {
             { provider: "anthropic", enabledBy: "environment", needsApiToken: false },
             { provider: "openai", needsApiToken: false },
             { provider: "google", enabledBy: "admin", needsApiToken: false },
+            { provider: "ollama", enabledBy: "environment", needsApiToken: false },
           ]);
       // The environment's listing comes first, so a provider it lists can't be turned off.
       expect(gatewayModels({ addedProviders: ["anthropic", "cloudflare"] }, "anthropic")
           .providerSettings.map(({ enabledBy }) => enabledBy))
-          .toEqual([undefined, "admin", "environment", undefined, undefined]);
+          .toEqual([undefined, "admin", "environment", undefined, undefined, undefined]);
     });
 
     it("reports a provider whose requests need a token the deployment lacks", () => {

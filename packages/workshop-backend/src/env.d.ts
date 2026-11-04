@@ -21,6 +21,11 @@ declare global {
       CF_AI_GATEWAY_API_TOKEN?: string;   // Run + Read token; optional when the binding transport
                                           // applies (still required for google)
       CF_AI_GATEWAY_USE_BINDING?: string;
+      // Cloudflare Access service-token pair for the homelab Ollama host, sent as request headers
+      // on "ollama" provider requests through AI Gateway. Both optional; the model router carries
+      // the same pair as its own secrets. Set as Worker secrets, never in code.
+      OLLAMA_ACCESS_CLIENT_ID?: string;
+      OLLAMA_ACCESS_CLIENT_SECRET?: string;
       // Note: outside gateway mode, Workers AI (provider "cloudflare") is BYOK like every other
       // provider -- the account ID and API token live in the user's model config, not in env.
 

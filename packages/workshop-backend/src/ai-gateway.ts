@@ -16,10 +16,10 @@ const QUICK_MODEL_ID = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
 /**
  * Providers AI Gateway serves: the ones gatewayNativeModel() in ai-models.ts has a route for.
- * Ollama has none, so a model added under it could never run.
+ * Ollama rides the gateway's custom-provider route (slug "ollama"; base_url set on the gateway).
  */
 const GATEWAY_PROVIDERS: ReadonlySet<string> = new Set<AiModelProvider>([
-  "anthropic", "openai", "google", "cloudflare", "cloudflare-auto-router",
+  "anthropic", "openai", "google", "cloudflare", "ollama", "cloudflare-auto-router",
 ]);
 
 /** The providers a model may be added under: the gateway's, less Auto Router's, which has one. */
@@ -103,6 +103,13 @@ export class AiGatewayConfig {
   readonly binding?: Ai;
   /** The providers CF_AI_GATEWAY_PROVIDERS lists, which an admin can add to (see GatewayModels). */
   readonly providers: Set<string>;
+  /**
+   * The Cloudflare Access service-token pair for the homelab Ollama host, sent as request headers
+   * on "ollama" provider requests only. Optional: when absent, Ollama requests carry no Access
+   * headers. Set as Worker secrets, never in code (the model router holds the same pair).
+   */
+  readonly ollamaAccessClientId?: string;
+  readonly ollamaAccessClientSecret?: string;
 
   constructor(env: Cloudflare.Env) {
     this.gateway = env.CF_AI_GATEWAY!;
@@ -128,6 +135,8 @@ export class AiGatewayConfig {
           "with --use-workers-ai-binding) or set CF_AI_GATEWAY_API_TOKEN (a Run + Read token).");
     }
     this.sameAccountGateway = this.binding ? this.gateway : undefined;
+    this.ollamaAccessClientId = env.OLLAMA_ACCESS_CLIENT_ID || undefined;
+    this.ollamaAccessClientSecret = env.OLLAMA_ACCESS_CLIENT_SECRET || undefined;
     this.providers = new Set(
       (env.CF_AI_GATEWAY_PROVIDERS || "").split(",").map(s => s.trim()).filter(s => s !== "")
     );
