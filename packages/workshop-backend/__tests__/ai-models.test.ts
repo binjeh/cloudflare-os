@@ -252,12 +252,27 @@ describe("getModel AI Gateway routing", () => {
     expect(request.headers.get("x-session-affinity")).toBe("session-a");
   }, 15000);
 
-  // The environment's providers are not all a deployment enables, so the refusal lists none.
-  it("refuses a provider the gateway has no route for", () => {
-    expect(() => getModel(env({ CF_AI_GATEWAY_PROVIDERS: "anthropic,ollama" }),
-        { provider: "ollama", model: "llama3", apiToken: "" }, INITIATOR))
-        .toThrow(new Error('Provider "ollama" is not supported through AI Gateway.'));
-  });
+  it("routes Ollama through the gateway's custom-provider route with Access headers",
+      async () => {
+    const handle = getModel(env({
+      CF_AI_GATEWAY_PROVIDERS: "anthropic,ollama",
+      OLLAMA_ACCESS_CLIENT_ID: "ollama-access-id",
+      OLLAMA_ACCESS_CLIENT_SECRET: "ollama-access-secret",
+    }), { provider: "ollama", model: "qwen3:8b", apiToken: "" }, INITIATOR);
+
+    expect(handle.model).toMatchObject({
+      api: "openai-completions", provider: "ollama",
+      baseUrl:
+          "https://gateway.ai.cloudflare.com/v1/gateway-account-id/platform-gateway/custom-ollama/v1",
+      reasoning: false, input: ["text"], contextWindow: 128000, maxTokens: 4096,
+    });
+
+    const request = await captureRequest(handle);
+    expect(request.url).toBe(
+        "https://gateway.ai.cloudflare.com/v1/gateway-account-id/platform-gateway/custom-ollama/v1/chat/completions");
+    expect(request.headers.get("cf-access-client-id")).toBe("ollama-access-id");
+    expect(request.headers.get("cf-access-client-secret")).toBe("ollama-access-secret");
+  }, 15000);
 
   describe("the Auto Router model", () => {
     const AUTO: AiModelConfig =
@@ -1088,7 +1103,7 @@ describe("gateway model reasoning levels", () => {
     ["openai", "gpt-next", OFF_TO_HIGH],
     ["cloudflare", "@cf/test/next", []],
     ["cloudflare", "@cf/meta/llama-3.3-70b-instruct-fp8-fast", []],
-    // AI Gateway serves no such provider.
+    // Ollama reasons on request and the gateway descriptor claims none.
     ["ollama", "qwen3:8b", []],
   ] as const)("lists the levels %s model %s can be sent", (provider, model, levels) => {
     expect(gatewayReasoningLevels(provider, model)).toEqual(levels);
@@ -1153,7 +1168,7 @@ describe("gateway model reasoning levels", () => {
     // A model pi knows borrows nothing.
     ["anthropic", "claude-haiku-4-5", "claude-opus-5-5", null],
     ["anthropic", "claude-opus-5-5", "claude-haiku-4-5", "adaptive"],
-    // AI Gateway serves no such provider.
+    // Ollama reasons on request and the gateway descriptor claims none.
     ["ollama", "qwen3:8b", undefined, null],
   ] as const)("says what %s model %s behaving like %s is asked for while no level is set",
       (provider, model, behavesLike, builtIn) => {

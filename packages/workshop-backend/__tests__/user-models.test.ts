@@ -288,15 +288,12 @@ describe("UserDurableObject gateway model modes", () => {
         () => inGatewayUser(async user => {
       await expect(user.addModel(PROFILE, CONFIG)).rejects.toThrow(providerUnavailable("openai"));
       expect(storedModel(user, PROFILE.id)).toBeUndefined();
-      // An admin's listing of a provider AI Gateway does not serve enables nothing.
-      const ollama = { provider: "ollama" as const, model: "llama", apiToken: "" };
-      await expect(user.addModel(PROFILE, ollama)).rejects.toThrow(providerUnavailable("ollama"));
-      // Nor is the Auto Router's, whose one model is the deployment's.
+      // The Auto Router's one model is the deployment's, never a user's to add.
       const auto =
           { provider: "cloudflare-auto-router" as const, model: "cloudflare/auto", apiToken: "" };
       await expect(user.addModel(PROFILE, auto))
           .rejects.toThrow(providerUnavailable("cloudflare-auto-router"));
-    }, { addedProviders: ["google", "ollama", "cloudflare-auto-router"] }));
+    }, { addedProviders: ["google", "cloudflare-auto-router"] }));
 
     // As when a provider leaves CF_AI_GATEWAY_PROVIDERS: the model stays and runs, uneditable.
     it("keeps a model whose provider an admin turned off again", () => {

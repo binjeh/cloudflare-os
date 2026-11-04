@@ -151,8 +151,6 @@ describe("AdminSettings added gateway models", () => {
   });
 
   it.each([
-    ["a provider AI Gateway does not serve", { ...ADDED, provider: "ollama" as const },
-      'Provider "ollama" is not served through AI Gateway.'],
     ["a provider this gateway does not enable", { ...ADDED, provider: "openai" as const },
       'Provider "openai" is not enabled on this deployment.'],
     ["a suggested model's ID", { ...ADDED, id: "claude-opus-5-5" },
@@ -372,13 +370,12 @@ describe("AdminSettings models.dev suggestions", () => {
 describe("AdminSettings.getSettings gateway models", () => {
   it("lists every gateway model in its mode, and the providers a model may be added under",
       async () => {
-    // ollama is enabled here, but AI Gateway does not serve it.
     const { inDo } = adminSettings({ ...GATEWAY, CF_AI_GATEWAY_PROVIDERS: "anthropic,ollama" });
     await inDo(admin => admin.addGatewayModel(ADDED));
     await inDo(admin => admin.setGatewayModelMode("claude-fable-5-1", "disabled"));
 
     const { gatewayModels } = await inDo(admin => admin.getSettings("admin"));
-    expect(gatewayModels!.providers).toEqual(["anthropic"]);
+    expect(gatewayModels!.providers).toEqual(["anthropic", "ollama"]);
     const byId = new Map(gatewayModels!.models.map(model => [model.id, model]));
     expect(byId.get("claude-fable-5-1")).toMatchObject(
         { provider: "anthropic", mode: "disabled", defaultMode: "enabled", added: false });
@@ -913,17 +910,13 @@ describe("AdminSettings gateway providers", () => {
     expect(view.slice(1, 3)).toStrictEqual(FLOOR);
   });
 
-  it("refuses a provider AI Gateway does not serve, on or off", async () => {
-    // The environment lists ollama here, which makes it no more servable.
-    for (let listed of ["anthropic", "anthropic,ollama"]) {
-      const { inDo, put } = adminSettings({ ...GATEWAY, CF_AI_GATEWAY_PROVIDERS: listed });
-      for (let enabled of [true, false]) {
-        await expect(inDo(admin => admin.setGatewayProviderEnabled("ollama", enabled)))
-            .rejects.toThrow(new Error('Provider "ollama" is not served through AI Gateway.'));
-      }
-      expect((await providers(inDo)).stored).toStrictEqual([]);
-      expect(put).not.toHaveBeenCalled();
-    }
+  it("lets an admin turn the served Ollama provider on, and refuses off when the environment lists it", async () => {
+    const { inDo } = adminSettings();
+    await inDo(admin => admin.setGatewayProviderEnabled("ollama", true));
+    await inDo(admin => admin.setGatewayProviderEnabled("ollama", false));
+    const env = adminSettings({ ...GATEWAY, CF_AI_GATEWAY_PROVIDERS: "anthropic,ollama" });
+    await expect(env.inDo(admin => admin.setGatewayProviderEnabled("ollama", false)))
+        .rejects.toThrow('Provider "ollama" is enabled by CF_AI_GATEWAY_PROVIDERS and can only be turned off there.');
   });
 
   it("keeps what is stored for a provider's models while the provider is off", async () => {
@@ -1250,12 +1243,12 @@ describe("AdminSettings.testGatewayProvider", () => {
     expect(requests).toHaveLength(4);
   });
 
-  it("throws for a provider AI Gateway does not serve", async () => {
+  it("throws for a provider with no suggested model to test", async () => {
     const { inDo, fetch } = tested(() => completion("OK"));
     const logged = vi.spyOn(console, "info").mockImplementation(() => {});
     try {
       await expect(inDo(admin => admin.testGatewayProvider("ollama", "admin@example.com")))
-          .rejects.toThrow(new Error('Provider "ollama" is not served through AI Gateway.'));
+          .rejects.toThrow(new Error('Provider "ollama" has no suggested model to test.'));
       expect(logged).not.toHaveBeenCalled();
     } finally {
       logged.mockRestore();

@@ -311,7 +311,7 @@ function workersAiCompat(catalog: CatalogEntry | undefined): OpenAICompletionsCo
 // native API, since the translation drops provider features pi relies on (extended thinking,
 // Anthropic cache_control prompt caching, the OpenAI Responses API). Billing -- including unified
 // billing on a user's own gateway -- is orthogonal to which API a request speaks. Returns
-// undefined for providers AI Gateway cannot serve (ollama).
+// undefined for a provider AI Gateway cannot serve.
 function gatewayNativeModel(config: AiModelConfig, gatewayUrl: string): Model<Api> | undefined {
   const catalog = gatewayCatalogModel(config);
   const window = modelTokenWindow(config, catalog);
@@ -383,6 +383,23 @@ function gatewayNativeModel(config: AiModelConfig, gatewayUrl: string): Model<Ap
         // gives "off" included. So the descriptor has the map only when a level is set, and
         // requests are otherwise sent no effort at all.
         ...(config.reasoning !== undefined ? { thinkingLevelMap: catalog?.thinkingLevelMap } : {}),
+        compat: workersAiCompat(catalog),
+      };
+    case "ollama":
+      // Self-hosted Ollama behind the gateway's custom-provider route. Ollama speaks the OpenAI
+      // Chat Completions shape under /v1, and the gateway forwards the path after the custom
+      // provider slug to its base_url, so this descriptor rides /custom-ollama the way Workers AI
+      // rides /workers-ai. Local models reason on request; the descriptor claims none.
+      return {
+        id: config.model,
+        name: catalog?.name ?? config.model,
+        api: "openai-completions",
+        provider: "ollama",
+        baseUrl: `${gatewayUrl}/custom-ollama/v1`,
+        reasoning: false,
+        input: ["text"],
+        cost: ZERO_COST,
+        ...window,
         compat: workersAiCompat(catalog),
       };
     case "cloudflare-auto-router":
@@ -870,6 +887,18 @@ function bindingFetch(binding: Ai): FetchFunction {
   return (input, init) => (binding as unknown as AiFetchBinding).fetch(input, init);
 }
 
+// The Access service-token headers the "ollama" provider's requests carry, read from the Worker
+// secrets the deployment sets for the homelab host. Present only for Ollama: a host behind plain
+// auth needs none, and a host behind Cloudflare Access needs this pair (the model router carries
+// the same two values as its own secrets). Both values must be present for either to be sent.
+function ollamaAccessHeaders(config: AiModelConfig, gwConfig: AiGatewayConfig): ProviderHeaders {
+  if (config.provider !== "ollama") return {};
+  const id = gwConfig.ollamaAccessClientId;
+  const secret = gwConfig.ollamaAccessClientSecret;
+  if (!id || !secret) return {};
+  return { "CF-Access-Client-Id": id, "CF-Access-Client-Secret": secret };
+}
+
 // Platform free-tier path: route through the deployment's configured AI Gateway (platform-funded).
 // Used only for requests that are NOT billed to a connected user's account.
 function getModelViaGateway(
@@ -895,6 +924,7 @@ function getModelViaGateway(
     Authorization: null,
     "x-api-key": null,
     ...autoRouterHeaders(config, options.sessionAffinity),
+    ...ollamaAccessHeaders(config, gwConfig),
   };
   const gatewayBase =
       `https://gateway.ai.cloudflare.com/v1/${gwConfig.accountId}`;
